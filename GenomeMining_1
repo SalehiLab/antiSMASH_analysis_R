@@ -63,6 +63,7 @@ second_elements <- lapply(taxonomy, function(x) x[2])
 ref_data$taxonomy <- second_elements
 
 ref_data <- apply(ref_data,2,as.character)
+ref_data <- as.data.frame(ref_data)
 
 # create a csv file containing sequence
 write.csv(ref_data,file = "./1_input_data_sequence.csv", row.names = FALSE)
