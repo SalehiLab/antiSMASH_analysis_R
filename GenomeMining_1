@@ -70,3 +70,45 @@ write.csv(ref_data,file = "./1_input_data_sequence.csv", row.names = FALSE)
 ref_data_ws <- subset(ref_data, select = -sequence)
 # create a csv file without sequence(due to the huge size of sequence)          
 write.csv(ref_data_ws,file = "./1_input_data.csv" , row.names = FALSE)
+
+
+##################GBK files########################
+# Get a list of file paths for GenBank files with names starting with "merged"
+file_list2 <- list.files(pattern = "^merged.*\\.gbk$")
+# Read the contents of GenBank files
+Data1 <- readGBFF(file_list2)
+
+# Assign accession numbers to the names of each genbank record 
+names(Data1) <- sapply(Data1, function(x) {
+  version_line <- x[grep("^VERSION", x)]
+  gsub("VERSION\\s+", "", version_line)
+})
+names(Data1)
+
+# Capture the features for each GenBank record
+GBFFfeat <- lapply(Data1, function(x) {
+  i_start <- grep("^LOCUS ", x)
+  i_end <- grep("^ORIGIN", x)
+  paste0(x[(i_start[1]):(i_end[1]-1)])
+}
+)
+###################extract protocluster data################
+# Apply the extract_protocluster_data function to each element in GBFFfeat
+result_list <- mapply(extract_protocluster_data, GBFFfeat, ref_data$refseq, ref_data$explanation, SIMPLIFY = FALSE)
+# Combine the resulting data frames into one
+combined_result_df <- do.call("rbind", lapply(result_list, function(x) cbind(x[[1]], x[, -1])))
+# Rename the column names
+names(combined_result_df) <- c("refseq","explanation", "Length","Protocluster_number","FromTo","Product"
+                               ,"Category","Core_location","aStool","Contig_edge","cutoff",
+                               "Tool","Neighbourhood","Detection_rule")
+write.csv(combined_result_df, file= "./2_results_protocluster.csv")
+
+###################extract protocore data################
+# Apply the extract_proto_core_data function to each element in GBFFfeat
+result_list <- mapply(extract_proto_core_data, GBFFfeat, ref_data$refseq, ref_data$explanation, SIMPLIFY = FALSE)
+# Combine the resulting data frames into one
+combined_result_df <- do.call("rbind", lapply(result_list, function(x) cbind(x[[1]], x[, -1])))
+# Rename the column names
+names(combined_result_df) <- c("refseq","explanation", "Length","Protocluster_number","FromTo","Product",
+                               "aStool","cutoff","Tool","Neighbourhood","Detection_rule")
+write.csv(combined_result_df, file= "./3_results_protocore.csv")
