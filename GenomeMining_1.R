@@ -95,21 +95,21 @@ GBFFfeat <- lapply(Data1, function(x) {
 )
 ###################extract protocluster data################
 # Apply the extract_protocluster_data function to each element in GBFFfeat
-result_list <- mapply(extract_protocluster_data, GBFFfeat, ref_data$refseq, ref_data$explanation, SIMPLIFY = FALSE)
+result_list <- mapply(extract_protocluster_data, GBFFfeat, ref_data$refseq, ref_data$Deffinition, SIMPLIFY = FALSE)
 # Combine the resulting data frames into one
 combined_result_df <- do.call("rbind", lapply(result_list, function(x) cbind(x[[1]], x[, -1])))
 # Rename the column names
-names(combined_result_df) <- c("refseq","explanation", "Length","Protocluster_number","FromTo","Product"
-                               ,"Category","Core_location","aStool","Contig_edge","cutoff",
+names(combined_result_df) <- c("refseq","Deffinition", "Length","Protocluster_number","FromTo","Product"
+                               ,"Category","Core_location","aStool","Contig_edge","Cutoff",
                                "Tool","Neighbourhood","Detection_rule")
 write.csv(combined_result_df, file= "./2_results_protocluster.csv")
 
 ###################extract protocore data################
 # Apply the extract_proto_core_data function to each element in GBFFfeat
-result_list <- mapply(extract_proto_core_data, GBFFfeat, ref_data$refseq, ref_data$explanation, SIMPLIFY = FALSE)
+result_list <- mapply(extract_proto_core_data, GBFFfeat, ref_data$refseq, ref_data$Deffinition, SIMPLIFY = FALSE)
 # Combine the resulting data frames into one
 combined_result_df <- do.call("rbind", lapply(result_list, function(x) cbind(x[[1]], x[, -1])))
 # Rename the column names
-names(combined_result_df) <- c("refseq","explanation", "Length","Protocluster_number","FromTo","Product",
-                               "aStool","cutoff","Tool","Neighbourhood","Detection_rule")
+names(combined_result_df) <- c("refseq","Deffinition", "Length","Protocluster_number","FromTo","Product",
+                               "aStool","Cutoff","Tool","Neighbourhood","Detection_rule")
 write.csv(combined_result_df, file= "./3_results_protocore.csv")
