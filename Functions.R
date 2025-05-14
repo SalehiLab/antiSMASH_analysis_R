@@ -1,4 +1,13 @@
 library(dplyr)
+library(rentrez)
+###################function to find taxonomy of each microorganism################ 
+get_taxonomy <- function(refseq_ids) {
+  result <- strsplit(entrez_fetch(db = "nuccore", id = refseq_ids, rettype = "gb", retmode = "text"), "\n")[[1]]
+  taxonomy_lines <- grep("^  ORGANISM", result)
+  REFERENCE_lines <- grep("REFERENCE", result)
+  taxonomy <- gsub("\\s", "", paste0(result[(taxonomy_lines+1 ):(REFERENCE_lines[1]-1)],collapse = ""))
+  return(c(refseq_ids,taxonomy))
+}
 ###################function to read a GenBank file################
 readGBFF <- function (file, text = readLines(file), verbose = FALSE){
   if (is(text, "character")) {
