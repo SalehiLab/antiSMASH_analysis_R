@@ -1,6 +1,6 @@
 library(dplyr)
 library(rentrez)
-###################function to find taxonomy################ 
+######################function to find taxonomy################### 
 get_taxonomy <- function(refseq_ids) {
   result <- strsplit(entrez_fetch(db = "nuccore", id = refseq_ids, rettype = "gb", retmode = "text"), "\n")[[1]]
   taxonomy_lines <- grep("^  ORGANISM", result)
