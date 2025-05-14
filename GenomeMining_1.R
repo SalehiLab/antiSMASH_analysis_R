@@ -15,11 +15,11 @@ headerLines <- strsplit(grep("^>", Data0, value = TRUE), ",")
 headerData<- lapply(headerLines,strsplit, " ")
 # Create a data frame to store refseq and explanation data
 ref_data <- data.frame(matrix(ncol = 2, nrow = length(headerData)), stringsAsFactors = FALSE)
-names(ref_data) <- c("refseq", "explanation")
+names(ref_data) <- c("refseq", "Deffinition")
 # Fill in the data frame with extracted information
 for (i in 1:length(headerData)) {
   ref_data[i, "refseq"] <- gsub(">", "", headerData[[i]][[1]][[1]])
-  ref_data[i, "explanation"] <- paste(headerData[[i]][[1]][-1], collapse = " ")
+  ref_data[i, "Deffinition"] <- paste(headerData[[i]][[1]][-1], collapse = " ")
 }
 
 # add a new column for microorganism's sequence
