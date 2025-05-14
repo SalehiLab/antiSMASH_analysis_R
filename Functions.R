@@ -84,7 +84,7 @@ extract_protocluster_data <- function(GBFFfeat, refseq, Deffinition) {
 }
 
 ###################Function to extract proto_core data################
-extract_proto_core_data <- function(GBFFfeat, refseq, explanation) {
+extract_proto_core_data <- function(GBFFfeat, refseq, Deffinition) {
   # Check if GBFFfeat is a list and extract the first element
   if (is.list(GBFFfeat)) {
     GBFFfeat <- GBFFfeat[[1]]
@@ -99,13 +99,13 @@ extract_proto_core_data <- function(GBFFfeat, refseq, explanation) {
     # Initialize a data frame to store proto_core data
     proto_core_data <- data.frame(matrix(ncol = 11, nrow = length(proto_core_start)), stringsAsFactors = FALSE)
     # Set column names
-    names(proto_core_data) <- c("refseq","explanation", "Length","Protocluster_number","FromTo","Product",
-                                "aStool","cutoff","Tool","Neighbourhood","Detection_rule")
+    names(proto_core_data) <- c("refseq","Deffinition", "Length","Protocluster_number","FromTo","Product",
+                                "aStool","Cutoff","Tool","Neighbourhood","Detection_rule")
     
     for (i in 1:length(proto_core_start)) {
-      # Set values for refseq and explanation columns
+      # Set values for refseq and Deffinition columns
       proto_core_data[i, "refseq"] <- refseq
-      proto_core_data[i, "explanation"] <- explanation
+      proto_core_data[i, "Deffinition"] <- Deffinition
       
       # Determine the end of the current cand_cluster block
       end_line <- grep("^\\s+/protocluster_number=", GBFFfeat[proto_core_start[i]:(proto_core_start[i]+25)])
@@ -131,7 +131,7 @@ extract_proto_core_data <- function(GBFFfeat, refseq, explanation) {
       proto_core_data[i, "aStool"] <- gsub("^\\s*/aStool=\"|\"$", "", proto_core_text[proto_core_aStool_line])
       # Extract and clean cutoff value
       proto_core_cutoff_line <- grep("/cutoff=", proto_core_text)
-      proto_core_data[i, "cutoff"] <- as.numeric(gsub("[^0-9:]", "", proto_core_text[proto_core_cutoff_line]))
+      proto_core_data[i, "Cutoff"] <- as.numeric(gsub("[^0-9:]", "", proto_core_text[proto_core_cutoff_line]))
       # Extract and clean tool value
       proto_core_tool_line<- grep("/tool=", proto_core_text)
       proto_core_data[i, "Tool"] <- gsub("^\\s*/tool=\"|\"$", "", proto_core_text[proto_core_tool_line])
@@ -152,8 +152,8 @@ extract_proto_core_data <- function(GBFFfeat, refseq, explanation) {
     return(proto_core_data)
   } else {
     # If no protocluster data found, return a data frame with NA values
-    return(data.frame(refseq = NA, explanation = NA, Length= NA, Protocluster_number = NA, FromTo = NA, 
-                      Product = NA, aStool = NA, cutoff = NA,
+    return(data.frame(refseq = NA, Deffinition = NA, Length= NA, Protocluster_number = NA, FromTo = NA, 
+                      Product = NA, aStool = NA, Cutoff = NA,
                       Tool=NA ,Neighbourhood = NA, Detection_rule = NA, stringsAsFactors = FALSE))
   }
 }
