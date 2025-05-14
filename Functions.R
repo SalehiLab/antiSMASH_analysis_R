@@ -8,7 +8,7 @@ readGBFF <- function (file, text = readLines(file), verbose = FALSE){
   return(text)
 }
 ###################Function to extract protocluster data################
-extract_protocluster_data <- function(GBFFfeat, refseq, explanation) {
+extract_protocluster_data <- function(GBFFfeat, refseq, Deffinition) {
   # Check if GBFFfeat is a list and extract the first element
   if (is.list(GBFFfeat)) {
     GBFFfeat <- GBFFfeat[[1]]
@@ -23,15 +23,15 @@ extract_protocluster_data <- function(GBFFfeat, refseq, explanation) {
     # Initialize a data frame to store protocluster data
     protocluster_data <- data.frame(matrix(ncol = 14, nrow = length(protocluster_start)), stringsAsFactors = FALSE)
     # Set column names
-    names(protocluster_data) <- c("refseq","explanation", "Length","Protocluster_number","FromTo","Product",
-                                  "Category","Core_location","aStool","Contig_edge","cutoff",
+    names(protocluster_data) <- c("refseq","Deffinition", "Length","Protocluster_number","FromTo","Product",
+                                  "Category","Core_location","aStool","Contig_edge","Cutoff",
                                   "Tool","Neighbourhood","Detection_rule") 
     for (i in 1:length(protocluster_start)) {
       # Extract the text between "protocluster" and "proto_core"
       protocluster_text <- GBFFfeat[protocluster_start[i]:proto_core_start[i]]
-      # Set values for refseq and explanation columns
+      # Set values for refseq and Deffinition columns
       protocluster_data[i, "refseq"] <- refseq
-      protocluster_data[i, "explanation"] <- explanation
+      protocluster_data[i, "Deffinition"] <- Deffinition
       # Extract and clean length
       protocluster_data[i,"Length"] <- as.numeric(strsplit(grep("LOCUS", GBFFfeat,value = TRUE), "\\s+")[[1]][3])
       # Extract and clean protocluster number
@@ -56,7 +56,7 @@ extract_protocluster_data <- function(GBFFfeat, refseq, explanation) {
       protocluster_data[i, "aStool"] <- gsub("^\\s*/aStool=\"|\"$", "", protocluster_text[protocluster_aStool_line])
       # Extract and clean cutoff value
       protocluster_cutoff_line <- grep("/cutoff=", protocluster_text)
-      protocluster_data[i, "cutoff"] <- as.numeric(gsub("[^0-9:]", "", protocluster_text[protocluster_cutoff_line]))
+      protocluster_data[i, "Cutoff"] <- as.numeric(gsub("[^0-9:]", "", protocluster_text[protocluster_cutoff_line]))
       # Extract and clean tool value
       protocluster_tool_line<- grep("/tool=", protocluster_text)
       protocluster_data[i, "Tool"] <- gsub("^\\s*/tool=\"|\"$", "", protocluster_text[protocluster_tool_line])
@@ -77,8 +77,8 @@ extract_protocluster_data <- function(GBFFfeat, refseq, explanation) {
     return(protocluster_data)
   } else {
     # If no protocluster data found, return a data frame with NA values
-    return(data.frame(refseq = NA, explanation = NA, Length= NA, Protocluster_number = NA, FromTo = NA, 
-                      Product = NA, Category = NA, Core_location= NA, aStool = NA, Contig_edge = NA, cutoff = NA,
+    return(data.frame(refseq = NA, Deffinition = NA, Length= NA, Protocluster_number = NA, FromTo = NA, 
+                      Product = NA, Category = NA, Core_location= NA, aStool = NA, Contig_edge = NA, Cutoff = NA,
                       Tool=NA ,Neighbourhood = NA, Detection_rule = NA, stringsAsFactors = FALSE))
   }
 }
