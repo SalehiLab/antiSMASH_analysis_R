@@ -50,13 +50,6 @@ ref_data$Length <- str_length(ref_data$sequence)
 ref_data$GC_content <- (ref_data$G_count + ref_data$C_count) / ref_data$Length * 100
 
 # find taxonomy of each microorganism
-get_taxonomy <- function(refseq_ids) {
-  result <- strsplit(entrez_fetch(db = "nuccore", id = refseq_ids, rettype = "gb", retmode = "text"), "\n")[[1]]
-  taxonomy_lines <- grep("^  ORGANISM", result)
-  REFERENCE_lines <- grep("REFERENCE", result)
-  taxonomy <- gsub("\\s", "", paste0(result[(taxonomy_lines+1 ):(REFERENCE_lines[1]-1)],collapse = ""))
-  return(c(refseq_ids,taxonomy))
-}
 taxonomy<- lapply(ref_data$refseq, get_taxonomy)
 #ref_data$taxonomy <- c(taxonomy1, taxonomy2, taxonomy3, taxonomy4, taxonomy5, taxonomy6, taxonomy7)
 second_elements <- lapply(taxonomy, function(x) x[2])
