@@ -44,10 +44,10 @@ for (i in seq_along(Fasta_header)) {
   }
 }
 # find genome size and GC content of a microorganism
-ref_data$G_count <- str_count(ref_data$sequence, "G")
-ref_data$C_count <- str_count(ref_data$sequence, "C")
+G_count <- str_count(ref_data$sequence, "G")
+C_count <- str_count(ref_data$sequence, "C")
 ref_data$Length <- str_length(ref_data$sequence)
-ref_data$GC_content <- (ref_data$G_count + ref_data$C_count) / ref_data$Length * 100
+ref_data$GC_content <- (G_count + C_count) / ref_data$Length * 100
 
 # find taxonomy of each microorganism
 taxonomy<- lapply(ref_data$refseq, get_taxonomy)
