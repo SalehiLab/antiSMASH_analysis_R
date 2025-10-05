@@ -1,1 +1,1 @@
-# Scripts for antiSMASH data extraction and postprocessing
+# R Scripts for antiSMASH Data Extraction and Postprocessing
