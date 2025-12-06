@@ -1,5 +1,4 @@
 
-#setwd("C:/Najmeh/Education/MyProject/GenomeMining/Results_NS/merged-42")
 cat("Start of GenomeMining.R script\n")
 ##################input file########################
 # Get a list of file paths to all .fna files in the "input" directory
