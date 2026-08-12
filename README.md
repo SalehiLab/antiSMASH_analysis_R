@@ -246,3 +246,10 @@ source("aS_DataExtraction.R")  # genome-level summary (sequence, GC%, taxonomy) 
 
 Both `GenomeMining.R` and `aS_DataExtraction.R` expect the same general input layout: FASTA files in `./input`, antiSMASH `merged*.gbk` files in the working directory, and (for `GenomeMining.R`) KnownClusterBlast reports in `./knownclusterblast/`. Each script can be run independently once `Functions.R` has been sourced, and each writes its outputs as numbered CSV files in the working directory.
 
+## License
+
+*Add a license (e.g. MIT) to clarify reuse terms.*
+
+## Citation
+
+*If this code was used in a publication, add citation details here.*
