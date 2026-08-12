@@ -1,4 +1,4 @@
-antiSMASH Data Extraction and Postprocessing (R)
+# antiSMASH Data Extraction and Postprocessing (R)
 R utilities for extracting, parsing, and postprocessing antiSMASH genome mining output, plus helper functions for retrieving NCBI taxonomy metadata.
 Repository Structure
 File	Description
