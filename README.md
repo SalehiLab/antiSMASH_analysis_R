@@ -320,6 +320,3 @@ The original three-script version of this repo had two inconsistencies that this
 - **Duplicate `readGBFF()`** — was defined identically in both the old `Functions.R` and `GenomeMining.R`. Now defined once, in `R/io_read.R`.
 - **Two incompatible `extract_protocluster_data()` versions** — the old `Functions.R` version returned 14 columns; the old `GenomeMining.R` version silently redefined the same function name with only 7 columns. Depending on `source()` order, one would overwrite the other. Now there is a single 14-column canonical version in `R/extract_features.R`, used by both pipelines.
 - As a result, column naming is now consistent across both pipelines: the genome-mining pipeline's output now uses `Deffinition` (matching the extraction pipeline) instead of the old `explanation`, and the KnownClusterBlast compound table now joins on `Protocluster_number` (capital P) to match the canonical extractor.
-## Citation
-
-*If this code was used in a publication, add citation details here.*
