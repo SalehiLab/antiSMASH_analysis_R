@@ -4,11 +4,21 @@ R utilities for extracting, parsing, and postprocessing [antiSMASH](https://anti
 
 ## Repository Structure
 
-| File | Description |
-|---|---|
-| `Functions.R` | Core helper functions used across the pipeline (taxonomy lookup, GenBank file parsing, biosynthetic gene cluster data extraction). Sourced by the other two scripts. |
-| `GenomeMining.R` | Exploratory genome mining pipeline: protoclusters, candidate clusters, PFAM/aSDomain annotations, PKS candidate shortlisting, KnownClusterBlast hits |
-| `aS_DataExtraction.R` | Genome-level summary (sequence, GC%, taxonomy) plus full protocluster/proto_core annotation extraction |
+```
+.
+├── R/
+│   ├── io_read.R           # File reading: GenBank files, FASTA headers, KnownClusterBlast reports
+│   ├── ncbi.R                # NCBI taxonomy lookup (rentrez)
+│   ├── genome_stats.R         # Sequence extraction, length, GC content
+│   ├── extract_features.R     # antiSMASH feature parsers (protocluster, proto_core, cand_cluster, PFAM, aSDomain)
+│   └── filters.R              # PKS candidate selection logic
+├── run_genome_mining.R      # Orchestration: exploratory genome mining pipeline
+└── run_data_extraction.R    # Orchestration: genome summary + full BGC annotation extraction
+```
+
+Everything in `R/` is a pure function library — no file I/O side effects beyond what each function is explicitly meant to do, and no top-level script logic. The two `run_*.R` scripts at the repo root are the only files that actually execute a pipeline: they `source()` the relevant files in `R/`, call functions in order, and write the numbered output CSVs.
+
+> **Note on history:** this repo previously had three flat scripts (`Functions.R`, `GenomeMining.R`, `aS_DataExtraction.R`) with some duplicated and slightly inconsistent function definitions. It has since been reorganized by function role, and the duplicate/inconsistent definitions have been consolidated into single canonical versions (see [Consolidation notes](#consolidation-notes) below).
 
 ## Dependencies
 
@@ -23,129 +33,130 @@ BiocManager::install("Biostrings")
 
 ---
 
-## `Functions.R`
+## `R/io_read.R`
 
-Four core functions supporting the antiSMASH postprocessing pipeline: one for NCBI taxonomy retrieval, one for parsing multi-record GenBank flat files, and two for extracting biosynthetic gene cluster (BGC) region annotations produced by antiSMASH.
+Low-level file reading utilities. No antiSMASH-domain parsing logic lives here — just getting raw text and records off disk.
+
+### `readGBFF(file, text = readLines(file), verbose = FALSE)`
+
+Reads a GenBank flat file (GBFF) and splits it into a list of individual records, using each `LOCUS` line as a record boundary. This allows multi-record GBFF files to be processed one record at a time.
+
+**Returns:** a list of character vectors, one per GenBank record.
+
+```r
+records <- readGBFF("cluster_001.region001.gbk")
+```
+
+### `parse_fasta_headers(fna_files)`
+
+Parses the `>accession, description` header lines of one or more FASTA (`.fna`) files into a lookup table.
+
+**Returns:** a data frame with columns `refseq`, `Deffinition`.
+
+```r
+fna_files <- list.files("./input", pattern = "*.fna", full.names = TRUE)
+ref_data <- parse_fasta_headers(fna_files)
+```
+
+### `load_merged_gbff(pattern = "^merged.*\\.gbk$")`
+
+Loads all antiSMASH `merged*.gbk` files in the working directory, names each record by its `VERSION` accession, and extracts the feature block between `LOCUS` and `ORIGIN` for each record.
+
+**Returns:** a named list of character vectors (one per genome), ready to pass into the `extract_*_data()` functions.
+
+```r
+GBFFfeat <- load_merged_gbff()
+```
+
+### `read_knownclusterblast(dir = "./knownclusterblast/")`
+
+Reads antiSMASH KnownClusterBlast `.txt` reports from a directory and extracts the `Source:` compound name reported under each cluster's `Details:` section.
+
+**Returns:** a data frame with columns `refseq`, `Protocluster_number`, `Compounds`.
+
+```r
+compounds <- read_knownclusterblast("./knownclusterblast/")
+```
+
+---
+
+## `R/ncbi.R`
 
 ### `get_taxonomy(refseq_ids)`
 
 Retrieves the full taxonomic lineage for one or more NCBI RefSeq accessions by querying the `nuccore` database via `rentrez::entrez_fetch()` and parsing the `ORGANISM` field from the returned GenBank record.
 
-**Arguments**
-- `refseq_ids` — a RefSeq accession (or vector of accessions) to query.
+**Returns:** a character vector `c(refseq_ids, taxonomy)`.
 
-**Returns**
-A character vector: `c(refseq_ids, taxonomy)`, where `taxonomy` is the concatenated, whitespace-stripped lineage string.
-
-**Example**
 ```r
 get_taxonomy("NC_003888.3")
 ```
 
 ---
 
-### `readGBFF(file, text = readLines(file), verbose = FALSE)`
+## `R/genome_stats.R`
 
-Reads a GenBank flat file (GBFF) and splits it into a list of individual records, using each `LOCUS` line as a record boundary. This allows multi-record GBFF files (e.g. antiSMASH region outputs) to be processed one record at a time by the extraction functions below.
+### `add_genome_stats(ref_data, fna_files)`
 
-**Arguments**
-- `file` — path to a `.gbk`/`.gbff` file.
-- `text` — optionally, pre-loaded lines of the file (defaults to `readLines(file)`).
-- `verbose` — currently unused; reserved for future logging.
+Given a `refseq`/`Deffinition` table (from `parse_fasta_headers()`) and the FASTA files it came from, extracts each genome's raw sequence, computes its length and GC content, and looks up its taxonomy via `get_taxonomy()`.
 
-**Returns**
-A list of character vectors, each containing the lines of a single GenBank record.
+**Depends on:** `get_taxonomy()` (`R/ncbi.R`) — source that file first.
 
-**Example**
+**Returns:** `ref_data` with `sequence`, `Length`, `GC_content`, and `taxonomy` columns added (all coerced to character).
+
 ```r
-records <- readGBFF("cluster_001.region001.gbk")
+ref_data <- parse_fasta_headers(fna_files)
+ref_data <- add_genome_stats(ref_data, fna_files)
 ```
 
 ---
 
-### `extract_protocluster_data(GBFFfeat, refseq, Deffinition)`
+## `R/extract_features.R`
 
-Parses the `protocluster` features of an antiSMASH-annotated GenBank record and returns one row of metadata per protocluster (e.g. NRPS, PKS, terpene, etc.), including product type, category, genomic coordinates, detection tool/rule, and cutoff values.
+The core antiSMASH domain-knowledge parsers. Each function takes one genome's GBK feature block (as produced by `load_merged_gbff()`), plus a `refseq` and `Deffinition` to tag rows with, and returns a tidy data frame — one row per feature instance found. All five share the same underlying pattern: locate a feature block by its antiSMASH feature key, then pull out `/key="value"` qualifiers by regex.
 
-**Arguments**
-- `GBFFfeat` — a GenBank record (or list containing one, as returned by `readGBFF()`).
-- `refseq` — accession/identifier to tag output rows with.
-- `Deffinition` — definition/description string to tag output rows with.
+| Function | Feature parsed | Columns returned |
+|---|---|---|
+| `extract_protocluster_data()` | `protocluster` | `refseq`, `Deffinition`, `Length`, `Protocluster_number`, `FromTo`, `Product`, `Category`, `Core_location`, `aStool`, `Contig_edge`, `Cutoff`, `Tool`, `Neighbourhood`, `Detection_rule` |
+| `extract_proto_core_data()` | `proto_core` | `refseq`, `Deffinition`, `Length`, `Protocluster_number`, `FromTo`, `Product`, `aStool`, `Cutoff`, `Tool`, `Neighbourhood`, `Detection_rule` |
+| `extract_cand_cluster_data()` | `cand_cluster` | `refseq`, `Deffinition`, `FromTo`, `SMILES`, `candidate_cluster_number`, `product`, `protocluster_number` |
+| `extract_PFAM_data()` | `PFAM_domain` | `refseq`, `Deffinition`, `FromTo`, `description`, `evalue`, `gene_ontologies`, `label`, `protein_start`, `protein_end`, `score`, `translation` |
+| `extract_aSDomain_data()` | `aSDomain` | `refseq`, `Deffinition`, `FromTo`, `description`, `evalue`, `identifier`, `label`, `protein_start`, `protein_end`, `score`, `specificity`, `translation` |
 
-**Returns**
-A data frame with one row per protocluster and the following columns:
+Every function returns a single `NA` row if the corresponding feature isn't present in that genome's record, so batch calls via `mapply()` never fail on an empty genome.
 
-| Column | Description |
-|---|---|
-| `refseq` | Accession passed in |
-| `Deffinition` | Definition passed in |
-| `Length` | Sequence length (from `LOCUS` line) |
-| `Protocluster_number` | antiSMASH protocluster index |
-| `FromTo` | Genomic coordinates of the protocluster |
-| `Product` | Predicted BGC product type |
-| `Category` | antiSMASH product category |
-| `Core_location` | Coordinates of the core region |
-| `aStool` | antiSMASH tool version tag |
-| `Contig_edge` | Whether the cluster touches a contig edge (`True`/`False`) |
-| `Cutoff` | Detection cutoff distance (bp) |
-| `Tool` | Detection tool used |
-| `Neighbourhood` | Neighbourhood extension distance (bp) |
-| `Detection_rule` | Rule string used for detection |
-
-Returns a single-row `NA` data frame if no protocluster features are found.
-
-**Example**
 ```r
-records <- readGBFF("cluster_001.region001.gbk")
-protoclusters <- extract_protocluster_data(records, refseq = "NC_003888.3", Deffinition = "Streptomyces coelicolor")
+GBFFfeat <- load_merged_gbff()
+protoclusters <- mapply(extract_protocluster_data, GBFFfeat, ref_data$refseq, ref_data$Deffinition, SIMPLIFY = FALSE)
+combined <- do.call("rbind", protoclusters)
 ```
 
 ---
 
-### `extract_proto_core_data(GBFFfeat, refseq, Deffinition)`
+## `R/filters.R`
 
-Parses the `proto_core` features (the core biosynthetic region within each protocluster) of an antiSMASH-annotated GenBank record and returns one row of metadata per proto_core.
+### `select_pks_candidates(cand_cluster_df)`
 
-**Arguments**
-Same as `extract_protocluster_data()`.
+Screens a combined `cand_cluster` table (from `extract_cand_cluster_data()`) for candidate clusters that look like polyketide (PKS) products, based on their predicted SMILES string: 12–20 carbon atoms, no nitrogen, at most 4 double bonds, restricted to `T1PKS`/`T2PKS`/`T3PKS`/`PKS-like` product annotations.
 
-**Returns**
-A data frame with one row per proto_core and the following columns:
+Kept separate from `extract_features.R` deliberately: this is a project-specific selection rule, not a generic GenBank parser. Adapting the screen for a different compound class only means editing this file.
 
-| Column | Description |
-|---|---|
-| `refseq` | Accession passed in |
-| `Deffinition` | Definition passed in |
-| `Length` | Sequence length (from `LOCUS` line) |
-| `Protocluster_number` | Associated protocluster index |
-| `FromTo` | Genomic coordinates of the proto_core |
-| `Product` | Predicted BGC product type(s), semicolon-separated |
-| `aStool` | antiSMASH tool version tag |
-| `Cutoff` | Detection cutoff distance (bp) |
-| `Tool` | Detection tool used |
-| `Neighbourhood` | Neighbourhood extension distance (bp) |
-| `Detection_rule` | Rule string used for detection |
-
-Returns a single-row `NA` data frame if no proto_core features are found.
-
-**Example**
 ```r
-records <- readGBFF("cluster_001.region001.gbk")
-proto_cores <- extract_proto_core_data(records, refseq = "NC_003888.3", Deffinition = "Streptomyces coelicolor")
+selected <- select_pks_candidates(combined_result_cand_cluster)
 ```
 
 ---
 
-## `GenomeMining.R`
+## `run_genome_mining.R`
 
-End-to-end pipeline that parses merged antiSMASH GenBank output for a batch of genomes and produces a set of tidy CSV tables covering biosynthetic gene clusters, candidate clusters, protein domains, and known-cluster hits — including a filtered shortlist of polyketide (PKS) candidate clusters based on SMILES composition.
+End-to-end pipeline producing tidy CSV tables covering biosynthetic gene clusters, candidate clusters, protein domains, and known-cluster hits — including a filtered shortlist of PKS candidates.
 
 ### Expected input structure
 
 ```
 working directory/
 ├── input/
-│   └── *.fna                     # FASTA files; headers used to map refseq -> explanation
+│   └── *.fna                     # FASTA files; headers used to map refseq -> Deffinition
 ├── merged*.gbk                   # antiSMASH merged GenBank output, one per genome
 └── knownclusterblast/
     └── *.txt                     # antiSMASH KnownClusterBlast hit reports
@@ -153,22 +164,22 @@ working directory/
 
 ### Workflow
 
-1. **Parse input FASTA headers** — reads every `.fna` file in `./input`, splits `>` header lines to build a `refseq` / `explanation` lookup table (`ref_data`). Saved as `1_input_data.csv`.
-2. **Load merged GenBank files** — reads all `merged*.gbk` files with `readGBFF()`, names each record by its `VERSION` accession, and extracts the feature block between `LOCUS` and `ORIGIN` (`GBFFfeat`).
-3. **Extract protocluster data** — `extract_protocluster_data()` (a lighter 7-column variant of the one in `Functions.R`) pulls protocluster number, coordinates, product, category, and core location for every genome. Saved as `2_results_protocluster.csv`.
-4. **Extract candidate cluster data** — `extract_cand_cluster_data()` parses `cand_cluster` features, including multi-line SMILES strings, candidate cluster number, product, and linked protocluster number. Saved as `3_results_cand_cluster.csv`.
-5. **Filter PKS candidates** — candidate clusters are screened by SMILES composition (12–20 carbon atoms, ≤4 double bonds `=`, no nitrogen `N`) and restricted to `T1PKS`/`T2PKS`/`T3PKS`/`PKS-like` products. Saved as `3_results_cand_cluster_Selected.csv`.
-6. **Extract PFAM domain data** — `extract_PFAM_data()` parses `PFAM_domain` features (description, e-value, GO terms, protein coordinates, score, translation). Saved as `4_results_PFAM_data.csv`.
-7. **Extract antiSMASH domain data** — `extract_aSDomain_data()` parses `aSDomain` features (description, e-value, identifier, specificity, protein coordinates, score, translation). Saved as `5_results_aSDomain_data.csv`.
-8. **Parse KnownClusterBlast hits** — reads each `.txt` report in `./knownclusterblast/`, extracts the `Source:` compound name(s) following the `Details:` line, and links them back to `refseq` + `protocluster_number`.
-9. **Merge results** — joins the protocluster table (step 3) with the compound hits (step 8) on `refseq` and `protocluster_number`. Saved as `2_mergedResults.csv`.
+1. **Parse input FASTA headers** (`parse_fasta_headers()`). Saved as `1_input_data.csv`.
+2. **Load merged GenBank files** (`load_merged_gbff()`).
+3. **Extract protocluster data** (`extract_protocluster_data()`). Saved as `2_results_protocluster.csv`.
+4. **Extract candidate cluster data** (`extract_cand_cluster_data()`), including multi-line SMILES strings. Saved as `3_results_cand_cluster.csv`.
+5. **Filter PKS candidates** (`select_pks_candidates()`). Saved as `3_results_cand_cluster_Selected.csv`.
+6. **Extract PFAM domain data** (`extract_PFAM_data()`). Saved as `4_results_PFAM_data.csv`.
+7. **Extract antiSMASH domain data** (`extract_aSDomain_data()`). Saved as `5_results_aSDomain_data.csv`.
+8. **Parse KnownClusterBlast hits** (`read_knownclusterblast()`).
+9. **Merge results** — joins the protocluster table (step 3) with the compound hits (step 8) on `refseq` and `Protocluster_number`. Saved as `2_mergedResults.csv`.
 
 ### Output files
 
 | File | Contents |
 |---|---|
-| `1_input_data.csv` | RefSeq accession ↔ explanation lookup from input FASTA headers |
-| `2_results_protocluster.csv` | One row per protocluster: coordinates, product, category, core location |
+| `1_input_data.csv` | RefSeq accession ↔ definition lookup from input FASTA headers |
+| `2_results_protocluster.csv` | One row per protocluster: coordinates, product, category, core location, detection tool/rule |
 | `2_mergedResults.csv` | Protocluster data merged with KnownClusterBlast compound hits |
 | `3_results_cand_cluster.csv` | One row per candidate cluster: coordinates, SMILES, product, linked protoclusters |
 | `3_results_cand_cluster_Selected.csv` | Candidate clusters filtered to likely PKS compounds by SMILES composition |
@@ -179,17 +190,14 @@ working directory/
 
 ```r
 # Run from a directory containing ./input/*.fna, merged*.gbk, and ./knownclusterblast/*.txt
-source("Functions.R")
-source("GenomeMining.R")
+source("run_genome_mining.R")
 ```
 
 ---
 
-## `aS_DataExtraction.R`
+## `run_data_extraction.R`
 
-Builds a genome-level summary table (sequence, length, GC content, taxonomy) from input FASTA files, then extracts full protocluster and proto_core annotations from merged antiSMASH GenBank output using the functions defined in `Functions.R`.
-
-> **Depends on `Functions.R`** — this script calls `get_taxonomy()`, `readGBFF()`, `extract_protocluster_data()`, and `extract_proto_core_data()`, so `Functions.R` must be sourced first.
+Builds a genome-level summary table (sequence, length, GC content, taxonomy) from input FASTA files, then extracts the full protocluster and proto_core annotations from merged antiSMASH GenBank output.
 
 ### Expected input structure
 
@@ -202,14 +210,12 @@ working directory/
 
 ### Workflow
 
-1. **Parse input FASTA headers** — reads every `.fna` file in `./input` and builds a `refseq` / `Deffinition` lookup table (`ref_data`), identical in approach to `GenomeMining.R`.
-2. **Extract genome sequences** — for each FASTA record, concatenates the sequence lines following its header and stores the full sequence in `ref_data$sequence`.
-3. **Compute genome statistics** — calculates sequence `Length` and `GC_content` (%) for each genome from its base composition.
-4. **Look up taxonomy** — calls `get_taxonomy()` (from `Functions.R`) for every `refseq` accession and appends the parsed lineage as `ref_data$taxonomy`.
-5. **Save genome summary tables** — writes the full table (including raw sequence) to `1_input_data_sequence.csv`, and a lighter version without the sequence column to `1_input_data.csv`.
-6. **Load merged GenBank files** — reads all `merged*.gbk` files with `readGBFF()`, names each record by its `VERSION` accession, and extracts the feature block between `LOCUS` and `ORIGIN` (`GBFFfeat`).
-7. **Extract protocluster data** — applies `extract_protocluster_data()` (the full 14-column version from `Functions.R`) across all genomes. Saved as `2_results_protocluster.csv`.
-8. **Extract proto_core data** — applies `extract_proto_core_data()` across all genomes. Saved as `3_results_protocore.csv`.
+1. **Parse input FASTA headers** (`parse_fasta_headers()`).
+2. **Compute genome sequence stats** — sequence, length, GC%, taxonomy (`add_genome_stats()`).
+3. **Save genome summary tables** — full table (including sequence) to `1_input_data_sequence.csv`; a lighter version without the sequence column to `1_input_data.csv`.
+4. **Load merged GenBank files** (`load_merged_gbff()`).
+5. **Extract protocluster data** (`extract_protocluster_data()`). Saved as `2_results_protocluster.csv`.
+6. **Extract proto_core data** (`extract_proto_core_data()`). Saved as `3_results_protocore.csv`.
 
 ### Output files
 
@@ -224,25 +230,96 @@ working directory/
 
 ```r
 # Run from a directory containing ./input/*.fna and merged*.gbk
-source("Functions.R")
-source("aS_DataExtraction.R")
+source("run_data_extraction.R")
 ```
 
 ---
 
 ## End-to-End Workflow
 
-The three scripts build on each other and are intended to be run against antiSMASH output as follows:
-
 ```r
-source("Functions.R")          # load shared helper functions
+source("run_genome_mining.R")    # exploratory pipeline: protoclusters, candidate clusters,
+                                  # PFAM/aSDomain annotations, PKS shortlist, KnownClusterBlast hits
 
-source("GenomeMining.R")       # exploratory pipeline: protoclusters, candidate clusters,
-                                # PFAM/aSDomain annotations, PKS shortlist, KnownClusterBlast hits
-
-source("aS_DataExtraction.R")  # genome-level summary (sequence, GC%, taxonomy) +
-                                # full protocluster / proto_core annotation tables
+source("run_data_extraction.R")  # genome-level summary (sequence, GC%, taxonomy) +
+                                  # full protocluster / proto_core annotation tables
 ```
 
-Both `GenomeMining.R` and `aS_DataExtraction.R` expect the same general input layout: FASTA files in `./input`, antiSMASH `merged*.gbk` files in the working directory, and (for `GenomeMining.R`) KnownClusterBlast reports in `./knownclusterblast/`. Each script can be run independently once `Functions.R` has been sourced, and each writes its outputs as numbered CSV files in the working directory.
+Each script sources everything it needs from `R/` internally — you don't need to `source()` the `R/` files yourself before running either pipeline. Both scripts expect the same general input layout: FASTA files in `./input` and antiSMASH `merged*.gbk` files in the working directory; `run_genome_mining.R` additionally expects KnownClusterBlast reports in `./knownclusterblast/`.
 
+## Running Step by Step (Interactively)
+
+Because every piece of logic is now a standalone function in `R/`, you don't have to run a full `run_*.R` script end to end — you can source just the pieces you need and call them one at a time in the console, inspecting each result before moving on. This is the recommended way to explore a new dataset or debug a specific step.
+
+### `run_genome_mining.R`, step by step
+
+```r
+library(dplyr)
+source("R/io_read.R")
+source("R/ncbi.R")
+source("R/extract_features.R")
+source("R/filters.R")
+
+# Step 1: parse FASTA headers
+fna_files <- list.files(path = "./input", pattern = "*.fna", full.names = TRUE)
+ref_data <- parse_fasta_headers(fna_files)
+head(ref_data)                       # <- inspect before continuing
+
+# Step 2: load merged GenBank feature blocks
+GBFFfeat <- load_merged_gbff()
+names(GBFFfeat)                      # <- check which genomes loaded
+
+# Step 3: extract protoclusters for all genomes
+protoclusters <- mapply(extract_protocluster_data, GBFFfeat,
+                         ref_data$refseq, ref_data$Deffinition, SIMPLIFY = FALSE)
+protoclusters_df <- do.call("rbind", protoclusters)
+View(protoclusters_df)               # <- inspect before writing out
+
+# Step 4: extract candidate clusters, then filter to PKS candidates
+cand_clusters <- mapply(extract_cand_cluster_data, GBFFfeat,
+                         ref_data$refseq, ref_data$Deffinition, SIMPLIFY = FALSE)
+cand_clusters_df <- do.call("rbind", cand_clusters)
+pks_candidates <- select_pks_candidates(cand_clusters_df)
+nrow(pks_candidates)                 # <- sanity-check the filter before saving
+
+# ...continue with extract_PFAM_data(), extract_aSDomain_data(),
+# read_knownclusterblast(), and merge() as needed, writing CSVs only
+# for the steps you actually want to keep.
+```
+
+### `run_data_extraction.R`, step by step
+
+```r
+library(rentrez); library(stringr); library(dplyr); library(tidyr); library(Biostrings)
+source("R/io_read.R")
+source("R/ncbi.R")
+source("R/genome_stats.R")
+source("R/extract_features.R")
+
+fna_files <- list.files(path = "./input", pattern = "*.fna", full.names = TRUE)
+ref_data <- parse_fasta_headers(fna_files)
+
+# add_genome_stats() calls get_taxonomy() per genome, which hits NCBI --
+# run this on a small subset first if you're testing
+ref_data <- add_genome_stats(ref_data, fna_files)
+head(ref_data[, c("refseq", "Length", "GC_content", "taxonomy")])
+
+GBFFfeat <- load_merged_gbff()
+protoclusters_df <- do.call("rbind", mapply(extract_protocluster_data, GBFFfeat,
+                             ref_data$refseq, ref_data$Deffinition, SIMPLIFY = FALSE))
+protocore_df <- do.call("rbind", mapply(extract_proto_core_data, GBFFfeat,
+                         ref_data$refseq, ref_data$Deffinition, SIMPLIFY = FALSE))
+```
+
+**Why this matters in practice:** `add_genome_stats()` calls NCBI once per genome via `get_taxonomy()`, which can be slow or hit rate limits on a large batch. Running it interactively — one genome or a small subset at a time — makes it much easier to catch issues (missing accessions, network errors) before committing to a full run.
+
+
+
+The original three-script version of this repo had two inconsistencies that this reorganization fixes:
+
+- **Duplicate `readGBFF()`** — was defined identically in both the old `Functions.R` and `GenomeMining.R`. Now defined once, in `R/io_read.R`.
+- **Two incompatible `extract_protocluster_data()` versions** — the old `Functions.R` version returned 14 columns; the old `GenomeMining.R` version silently redefined the same function name with only 7 columns. Depending on `source()` order, one would overwrite the other. Now there is a single 14-column canonical version in `R/extract_features.R`, used by both pipelines.
+- As a result, column naming is now consistent across both pipelines: the genome-mining pipeline's output now uses `Deffinition` (matching the extraction pipeline) instead of the old `explanation`, and the KnownClusterBlast compound table now joins on `Protocluster_number` (capital P) to match the canonical extractor.
+## Citation
+
+*If this code was used in a publication, add citation details here.*
