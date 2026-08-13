@@ -18,7 +18,6 @@ R utilities for extracting, parsing, and postprocessing [antiSMASH](https://anti
 
 Everything in `R/` is a pure function library — no file I/O side effects beyond what each function is explicitly meant to do, and no top-level script logic. The two `run_*.R` scripts at the repo root are the only files that actually execute a pipeline: they `source()` the relevant files in `R/`, call functions in order, and write the numbered output CSVs.
 
-> **Note on history:** this repo previously had three flat scripts (`Functions.R`, `GenomeMining.R`, `aS_DataExtraction.R`) with some duplicated and slightly inconsistent function definitions. It has since been reorganized by function role, and the duplicate/inconsistent definitions have been consolidated into single canonical versions (see [Consolidation notes](#consolidation-notes) below).
 
 ## Dependencies
 
