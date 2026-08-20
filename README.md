@@ -11,7 +11,6 @@ R utilities for extracting, parsing, and postprocessing [antiSMASH](https://anti
 │   ├── ncbi.R                # NCBI taxonomy lookup (rentrez)
 │   ├── genome_stats.R         # Sequence extraction, length, GC content
 │   ├── extract_features.R     # antiSMASH feature parsers (protocluster, proto_core, cand_cluster, PFAM, aSDomain)
-│   └── filters.R              # PKS candidate selection logic
 ├── run_genome_mining.R      # Orchestration: exploratory genome mining pipeline
 └── run_data_extraction.R    # Orchestration: genome summary + full BGC annotation extraction
 ```
@@ -130,19 +129,6 @@ protoclusters <- mapply(extract_protocluster_data, GBFFfeat, ref_data$refseq, re
 combined <- do.call("rbind", protoclusters)
 ```
 
----
-
-## `R/filters.R`
-
-### `select_pks_candidates(cand_cluster_df)`
-
-Screens a combined `cand_cluster` table (from `extract_cand_cluster_data()`) for candidate clusters that look like polyketide (PKS) products, based on their predicted SMILES string: 12–20 carbon atoms, no nitrogen, at most 4 double bonds, restricted to `T1PKS`/`T2PKS`/`T3PKS`/`PKS-like` product annotations.
-
-Kept separate from `extract_features.R` deliberately: this is a project-specific selection rule, not a generic GenBank parser. Adapting the screen for a different compound class only means editing this file.
-
-```r
-selected <- select_pks_candidates(combined_result_cand_cluster)
-```
 
 ---
 
@@ -167,11 +153,10 @@ working directory/
 2. **Load merged GenBank files** (`load_merged_gbff()`).
 3. **Extract protocluster data** (`extract_protocluster_data()`). Saved as `2_results_protocluster.csv`.
 4. **Extract candidate cluster data** (`extract_cand_cluster_data()`), including multi-line SMILES strings. Saved as `3_results_cand_cluster.csv`.
-5. **Filter PKS candidates** (`select_pks_candidates()`). Saved as `3_results_cand_cluster_Selected.csv`.
-6. **Extract PFAM domain data** (`extract_PFAM_data()`). Saved as `4_results_PFAM_data.csv`.
-7. **Extract antiSMASH domain data** (`extract_aSDomain_data()`). Saved as `5_results_aSDomain_data.csv`.
-8. **Parse KnownClusterBlast hits** (`read_knownclusterblast()`).
-9. **Merge results** — joins the protocluster table (step 3) with the compound hits (step 8) on `refseq` and `Protocluster_number`. Saved as `2_mergedResults.csv`.
+5. **Extract PFAM domain data** (`extract_PFAM_data()`). Saved as `4_results_PFAM_data.csv`.
+6. **Extract antiSMASH domain data** (`extract_aSDomain_data()`). Saved as `5_results_aSDomain_data.csv`.
+7. **Parse KnownClusterBlast hits** (`read_knownclusterblast()`).
+8. **Merge results** — joins the protocluster table (step 3) with the compound hits (step 7) on `refseq` and `Protocluster_number`. Saved as `2_mergedResults.csv`.
 
 ### Output files
 
@@ -181,7 +166,6 @@ working directory/
 | `2_results_protocluster.csv` | One row per protocluster: coordinates, product, category, core location, detection tool/rule |
 | `2_mergedResults.csv` | Protocluster data merged with KnownClusterBlast compound hits |
 | `3_results_cand_cluster.csv` | One row per candidate cluster: coordinates, SMILES, product, linked protoclusters |
-| `3_results_cand_cluster_Selected.csv` | Candidate clusters filtered to likely PKS compounds by SMILES composition |
 | `4_results_PFAM_data.csv` | PFAM domain annotations (description, e-value, GO terms, coordinates, translation) |
 | `5_results_aSDomain_data.csv` | antiSMASH domain annotations (description, e-value, specificity, coordinates, translation) |
 
